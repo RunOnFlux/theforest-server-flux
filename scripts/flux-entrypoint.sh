@@ -307,8 +307,9 @@ start_generation() {
   [ "${terminating}" = "1" ] && return 2
 
   # A restart asked for while the server was still preparing (a save during the download) is already
-  # covered: the game reads its file only now. Left in place it would stop the game right after it starts.
-  rm -f "${FLUX_RESTART_MARKER}"
+  # covered: the game reads its file only now. Left in place it would stop the game right after it
+  # starts. A restore or new world asked for since keeps its restart.
+  forest clear-stale-restart
   forest state starting "Loading the world"
   flux_banner "The Forest"
   flux_log "starting the server (generation ${generation})"

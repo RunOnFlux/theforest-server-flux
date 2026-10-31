@@ -300,6 +300,38 @@ rm -rf "${data}/flux/backups"
 for i in 1 2 3 4; do FLUX_BACKUP_KEEP_SAFETY=2 forest FLUX_BACKUP_KEEP_SAFETY=2 backup "before test ${i}" force >/dev/null; done
 check "only the newest safety copies are kept" "2" "$(forest backups | python3 -c 'import json,sys;print(len([b for b in json.load(sys.stdin)["backups"] if b["keep"]]))')"
 
+# Review round 2 of 1.0.1.
+forest "${P[@]}" FOREST_PASSWORD= apply >/dev/null
+forest set-settings '{"serverPassword": "panelpw"}' >/dev/null
+rm -rf "${data}/flux/backups"
+forest state running
+forest backup "pw panel" force >/dev/null
+pname="$(forest backups | jget backups.0.name)"
+forest restore "${pname}" >/dev/null
+forest "${P[@]}" FOREST_PASSWORD= do-restore >/dev/null
+check "a restore with a blank env keeps a password set in the panel" "panelpw" "$(cfg serverPassword | tr -d ' ')"
+forest "${P[@]}" FOREST_PASSWORD=abc apply >/dev/null
+forest "${P[@]}" FOREST_PASSWORD= set-settings '{"serverPassword": "saved"}' >/dev/null
+forest "${P[@]}" FOREST_PASSWORD= apply >/dev/null
+check "a password saved while the env was emptied is not removed at the next start" "saved" "$(cfg serverPassword | tr -d ' ')"
+rm -rf "${data}/flux/backups"
+forest backup "regular" force >/dev/null
+for i in 1 2 3; do forest FLUX_BACKUP_KEEP_SAFETY=2 backup "before safe ${i}" force >/dev/null; done
+check "the safety cap drops the oldest, not the newest" "before safe 2,before safe 3" "$(forest backups | python3 -c 'import json,sys;print(",".join(sorted(b["why"] for b in json.load(sys.stdin)["backups"] if b["keep"])))')"
+check "a regular backup is not touched by the safety cap" "1" "$(forest backups | python3 -c 'import json,sys;print(len([b for b in json.load(sys.stdin)["backups"] if not b["keep"]]))')"
+check "a bad cap is the default, not a crash" "0" "$(status forest FLUX_BACKUP_KEEP_SAFETY=abc backup "before bad" force)"
+check "and a cap of 0 is 1, so the newest safety copy survives" "1" "$(forest FLUX_BACKUP_KEEP_SAFETY=0 backup "before zero" force >/dev/null; forest backups | python3 -c 'import json,sys;print(len([b for b in json.load(sys.stdin)["backups"] if b["keep"] and b["why"]=="before zero"]))')"
+printf 'requested: test\nnotbefore=0\n' >"${tmp}/restart-marker"
+forest clear-stale-restart
+check "a stale restart request is dropped right before the game starts" "1" "$(status test -e "${tmp}/restart-marker")"
+printf 'requested: test\nnotbefore=0\n' >"${tmp}/restart-marker"
+forest state running
+forest restore "$(forest backups | jget backups.0.name)" >/dev/null
+printf 'requested: test\nnotbefore=0\n' >"${tmp}/restart-marker"
+forest clear-stale-restart
+check "but not when a restore is waiting for it" "0" "$(status test -e "${tmp}/restart-marker")"
+forest do-restore >/dev/null
+
 # Update bookkeeping.
 forest update-target 20300000
 forest update-check >/dev/null

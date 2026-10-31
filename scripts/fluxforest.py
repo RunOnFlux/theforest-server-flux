@@ -189,6 +189,15 @@ def fail(message, code=1):
     sys.exit(code)
 
 
+def env_int(name, default, minimum):
+    """An integer setting from the environment: a bad value is the default, a small one the minimum
+    (a 0 or a word must not make a backup delete itself or a restore fail)."""
+    try:
+        return max(minimum, int(str(os.environ.get(name, "")).strip() or default))
+    except ValueError:
+        return default
+
+
 def env_set(name):
     """A variable counts only with a value: the marketplace writes every declared parameter, the
     ones left blank as NAME=, and a blank one must not wipe what the panel set."""
@@ -871,8 +880,10 @@ def cmd_set_settings(args):
     applied = applied if isinstance(applied, dict) else {}
     marked = False
     for name, key in ENV_KEYS.items():
-        if key in change and env_set(name):
-            applied[name] = os.environ[name]
+        if key in change and name in os.environ and (env_set(name) or applied.get(name)):
+            # (a blank env that had a value is recorded as blank, so the next start does not
+            # remove the password the owner has just saved)
+            applied[name] = os.environ[name] if env_set(name) else ""
             marked = True
     if marked:
         write_json(ENV_APPLIED_FILE, applied)
@@ -928,6 +939,18 @@ def cmd_status(_args):
     out(result)
 
 
+def cmd_clear_stale_restart(_args):
+    """Called right before the game starts: a restart asked for while the server was preparing is
+    already covered (the game reads its config only now), unless a restore or a new world was asked
+    for after this generation looked for them. Those keep their restart."""
+    if os.path.exists(RESTORE_FILE) or os.path.exists(NEW_WORLD_FILE):
+        return
+    try:
+        os.remove(RESTART_MARKER)
+    except OSError:
+        pass
+
+
 def cmd_restart(_args):
     state = load_state()
     if state.get("state") not in ("running", "starting", "updating", "restarting"):
@@ -973,7 +996,7 @@ def prune_backups(keep):
     index = load_index()
     kept = 0
     safety = 0
-    safety_max = int(os.environ.get("FLUX_BACKUP_KEEP_SAFETY", "20"))
+    safety_max = env_int("FLUX_BACKUP_KEEP_SAFETY", 20, 1)
     good_seen = False
     for row in rows:
         meta = index.get(row["name"], {})
@@ -1007,7 +1030,7 @@ def make_backup(why, force=False):
     notes = []
     if not any(s.get("exists") for s in list_slots()):
         return ["# backup skipped: nothing saved yet"]
-    min_age = int(os.environ.get("FLUX_BACKUP_MIN_AGE_MINUTES", "60")) * 60
+    min_age = env_int("FLUX_BACKUP_MIN_AGE_MINUTES", 60, 0) * 60
     rows = list_backups()
     if not force and rows and time.time() - rows[0]["time"] < min_age:
         return [f"# backup skipped: the newest is {int((time.time() - rows[0]['time']) / 60)} min old"]
@@ -1028,7 +1051,7 @@ def make_backup(why, force=False):
     index[name] = {"time": int(time.time()), "why": why, "slots": [s["slot"] for s in list_slots() if s.get("exists")],
                    "keep": why.startswith("before"), "good": state.get("state") == "running"}
     write_json(BACKUP_INDEX, index)
-    prune_backups(int(os.environ.get("FLUX_BACKUP_KEEP", "10")))
+    prune_backups(env_int("FLUX_BACKUP_KEEP", 10, 1))
     notes.append(f"# backup {name} ({why}, {os.path.getsize(path) // 1024} KB)")
     return notes
 
@@ -1070,8 +1093,10 @@ def reassert_env_passwords():
             value, why = coerce(RULES[key], raw)
             if why:
                 continue
+        elif applied.get(name):
+            value = ""  # it was set by the deployment and has been emptied there
         else:
-            value = ""
+            continue  # blank and never set by the deployment: a panel password stays
         config[key] = value
         applied[name] = raw
     save_config(config)
@@ -1176,7 +1201,7 @@ COMMANDS = {
     "apply": cmd_apply, "state": cmd_state, "note": cmd_note, "status": cmd_status,
     "settings": cmd_settings, "set-settings": cmd_set_settings, "saves": cmd_saves,
     "use-slot": cmd_use_slot, "new-world": cmd_new_world, "delete-slot": cmd_delete_slot,
-    "import-save": cmd_import_save, "export-save": cmd_export_save, "restart": cmd_restart,
+    "import-save": cmd_import_save, "export-save": cmd_export_save, "restart": cmd_restart, "clear-stale-restart": cmd_clear_stale_restart,
     "backups": cmd_backups, "restore": cmd_restore, "backup": cmd_backup, "do-restore": cmd_do_restore,
     "update-target": cmd_update_target, "update-check": cmd_update_check,
     "update-skip": cmd_update_skip, "players": cmd_players,
