@@ -366,6 +366,14 @@ def apply_env(config, notes, created):
     changed = False
     for name, key in ENV_KEYS.items():
         if not env_set(name):
+            # A password that was set and is now emptied in the deployment is removed: the marketplace
+            # writes NAME= for a blank one, and without this the old password stayed in the file while
+            # the connect card said there was none. A blank on a first deploy changes nothing.
+            if key in SECRET_KEYS and name in os.environ and applied.get(name):
+                config[key] = ""
+                applied[name] = ""
+                notes.append(f"{key} = (none) ({name} emptied)")
+                changed = True
             continue
         raw = os.environ[name]
         if not created and applied.get(name) == raw:
@@ -857,6 +865,17 @@ def cmd_set_settings(args):
         out({"ok": False, "error": "Some settings were not accepted.", "fields": errors})
         sys.exit(1)
     save_config(config)
+    # A value the owner saved here counts as applied for the env that also sets it, so the same old
+    # env does not put its value back at the next start (before the first start it would otherwise).
+    applied = read_json(ENV_APPLIED_FILE, {})
+    applied = applied if isinstance(applied, dict) else {}
+    marked = False
+    for name, key in ENV_KEYS.items():
+        if key in change and env_set(name):
+            applied[name] = os.environ[name]
+            marked = True
+    if marked:
+        write_json(ENV_APPLIED_FILE, applied)
     out({"ok": True, "restartNeeded": True})
 
 
@@ -953,10 +972,21 @@ def prune_backups(keep):
     rows = list_backups()
     index = load_index()
     kept = 0
+    safety = 0
+    safety_max = int(os.environ.get("FLUX_BACKUP_KEEP_SAFETY", "20"))
     good_seen = False
     for row in rows:
         meta = index.get(row["name"], {})
         if meta.get("keep"):
+            # Safety copies are never rotated out by the regular count, but there is a ceiling (newest
+            # first), or every restore, delete and new world would add a full copy for good.
+            safety += 1
+            if safety > safety_max:
+                try:
+                    os.remove(os.path.join(BACKUP_DIR, row["name"]))
+                except OSError:
+                    pass
+                index.pop(row["name"], None)
             continue
         if not good_seen and meta.get("good"):
             good_seen = True
@@ -1026,6 +1056,28 @@ def cmd_restore(args):
     out({"ok": True, "restarting": running, "name": name})
 
 
+def reassert_env_passwords():
+    """After a restore, the passwords are the deployment's again: the connect card reads them from the
+    env, and an older backup holds whatever they were then."""
+    config, _ = load_config()
+    applied = read_json(ENV_APPLIED_FILE, {})
+    applied = applied if isinstance(applied, dict) else {}
+    for name, key in ENV_KEYS.items():
+        if key not in SECRET_KEYS or name not in os.environ:
+            continue
+        raw = os.environ[name]
+        if raw.strip():
+            value, why = coerce(RULES[key], raw)
+            if why:
+                continue
+        else:
+            value = ""
+        config[key] = value
+        applied[name] = raw
+    save_config(config)
+    write_json(ENV_APPLIED_FILE, applied)
+
+
 def cmd_do_restore(_args):
     pending = read_json(RESTORE_FILE)
     if not isinstance(pending, dict):
@@ -1058,6 +1110,7 @@ def cmd_do_restore(_args):
             shutil.move(os.path.join(restored, "Multiplayer"), MODE_DIR)
         if os.path.isfile(os.path.join(restored, "config.cfg")):
             shutil.copyfile(os.path.join(restored, "config.cfg"), CONFIG_FILE)
+            reassert_env_passwords()
         print(f"# restored {name}")
     except (OSError, ValueError, tarfile.TarError) as e:
         print(f"# WARN the restore of {name} failed: {e}")

@@ -103,3 +103,4 @@ to get with a base.
 ## Versions
 
 - 1.0.0: first release.
+- 1.0.1: emptying a password in the deployment removes it; a value saved in the panel is not undone by the deployment's env (also before the first start); a restore puts the deployment's passwords back; a restart asked for while the server prepares no longer stops the game right after it starts; safety backups are capped (newest 20).

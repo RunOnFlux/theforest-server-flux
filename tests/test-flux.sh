@@ -260,6 +260,46 @@ check "do-restore brings the slot back" "0" "$(status test -f "${slots}/Slot5/__
 check "after a safety backup" "1" "$(grep -c 'before restoring' "${data}/flux/backups/index.json")"
 check "restore refuses a name that is not a backup" "1" "$(status forest restore ../../etc/passwd)"
 
+# Passwords and the env (1.0.1).
+forest "${P[@]}" FOREST_PASSWORD=pw1 FOREST_ADMIN_PASSWORD=adm1 apply >/dev/null
+check "a password is set from the env" "pw1 adm1" "$(cfg serverPassword) $(cfg serverPasswordAdmin)"
+forest "${P[@]}" FOREST_PASSWORD= FOREST_ADMIN_PASSWORD= apply >"${tmp}/apply.out"
+check "emptying the env removes the join password" "" "$(cfg serverPassword | tr -d ' ')"
+check "and the admin password" "" "$(cfg serverPasswordAdmin | tr -d ' ')"
+check "without printing it" "0" "$(grep -c -E 'pw1|adm1' "${tmp}/apply.out")"
+forest "${P[@]}" FOREST_PASSWORD= apply >/dev/null
+check "a blank that was never set changes nothing" "" "$(cfg serverPassword | tr -d ' ')"
+forest "${P[@]}" FOREST_SERVER_NAME="Deploy Name" apply >/dev/null
+forest set-settings '{"serverName": "Panel Name"}' >/dev/null
+forest "${P[@]}" FOREST_SERVER_NAME="Deploy Name" apply >/dev/null
+check "a value saved in the panel survives the same env" "Panel Name" "$(cfg serverName)"
+forest "${P[@]}" FOREST_SERVER_NAME="Renamed" apply >/dev/null
+check "and a changed env still wins" "Renamed" "$(cfg serverName)"
+
+# A panel save before the first start is not undone by the deploy's env.
+rm -rf "${tmp}/fresh"
+fresh() { local vars=(); while [[ "${1:-}" == *=* ]]; do vars+=("$1"); shift; done
+  env -i PATH="${PATH}" HOME="${tmp}" FLUX_DATA_DIR="${tmp}/fresh" FLUX_SERVER_DIR="${server}" FLUX_RESTART_MARKER="${tmp}/restart-marker" "${vars[@]}" python3 scripts/fluxforest.py "$@"; }
+fresh FOREST_MAX_PLAYERS=6 set-settings '{"serverPlayers": 20}' >/dev/null
+fresh "${P[@]}" FOREST_MAX_PLAYERS=6 apply >/dev/null
+check "a Max Players saved before the first start is kept" "20" "$(sed -n 's/^serverPlayers //p' "${tmp}/fresh/config.cfg")"
+
+# A restore puts the deployment's passwords back, whatever the older backup held.
+forest "${P[@]}" FOREST_PASSWORD=old apply >/dev/null
+forest state running
+rm -rf "${data}/flux/backups"
+forest backup "pw test" force >/dev/null
+bname="$(forest backups | jget backups.0.name)"
+forest "${P[@]}" FOREST_PASSWORD=current apply >/dev/null
+forest restore "${bname}" >/dev/null
+forest "${P[@]}" FOREST_PASSWORD=current do-restore >/dev/null
+check "restoring an older backup keeps the current join password" "current" "$(cfg serverPassword | tr -d ' ')"
+
+# Safety copies have a ceiling.
+rm -rf "${data}/flux/backups"
+for i in 1 2 3 4; do FLUX_BACKUP_KEEP_SAFETY=2 forest FLUX_BACKUP_KEEP_SAFETY=2 backup "before test ${i}" force >/dev/null; done
+check "only the newest safety copies are kept" "2" "$(forest backups | python3 -c 'import json,sys;print(len([b for b in json.load(sys.stdin)["backups"] if b["keep"]]))')"
+
 # Update bookkeeping.
 forest update-target 20300000
 forest update-check >/dev/null
