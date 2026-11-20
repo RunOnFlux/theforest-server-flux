@@ -42,6 +42,7 @@ so the hub's panel edits survive restarts.
 | `FOREST_SERVER_NAME` | serverName (<= 60 chars) | `The Forest on Flux` |
 | `FOREST_PASSWORD` | serverPassword (<= 40 chars) | none |
 | `FOREST_ADMIN_PASSWORD` | serverPasswordAdmin (<= 40 chars): a player who joins with it is an admin | none |
+| `FOREST_STEAM_ACCOUNT` | serverSteamAccount: a Steam game server login token (32 hex characters) made for **Steam app 242760** (The Forest, not the dedicated server's 556450) at steamcommunity.com/dev/managegameservers. Without it the server logs on anonymously and gets a new identity at every start, and the game ties each player's character (stored on their own PC) to that identity: characters start over after a restart. One running server per token | none (anonymous) |
 | `FOREST_MAX_PLAYERS` | serverPlayers 2-100 (the game clamps it to 2..100 itself, `SteamDSConfig.minPlayersPerServer/maxPlayersPerServer`; 8 is only the co-op group size) | 8 |
 | `FOREST_DIFFICULTY` | difficulty Peaceful/Normal/Hard (for a NEW world) | Normal |
 | `FOREST_AUTOSAVE_MINUTES` | serverAutoSaveInterval 15-120 | 15 |
@@ -104,3 +105,4 @@ to get with a base.
 
 - 1.0.0: first release.
 - 1.0.1: emptying a password in the deployment removes it; a value saved in the panel is not undone by the deployment's env (also before the first start); a restore puts the deployment's passwords back; a restart asked for while the server prepares no longer stops the game right after it starts; safety backups are capped (newest 20, `FLUX_BACKUP_KEEP_SAFETY`); a restore with a blank password env keeps a password set in the panel; a bad `FLUX_BACKUP_*` number is the default instead of a crash.
+- 1.0.2: `FOREST_STEAM_ACCOUNT` (and the panel's Steam server token field) sets `serverSteamAccount`; a malformed token is refused; the start-up notes say whether the server is anonymous. Players' characters now survive restarts once a token is set (changing from anonymous to a token starts every character over once, because they were tied to the old identity).
