@@ -88,6 +88,9 @@ SETTLE_SECONDS = 5
 
 DIFFICULTIES = ["Peaceful", "Normal", "Hard"]
 
+# A Steam game server login token as steamcommunity.com/dev/managegameservers shows it.
+GSLT_RE = re.compile(r"^[0-9A-Fa-f]{32}$")
+
 # What the game writes into the config it makes for itself (Server.cfg template, in its order),
 # with the values this image starts from.
 CONFIG_DEFAULTS = {
@@ -129,6 +132,7 @@ RULES = {
     "enableVAC": ("bool", None),
     "serverPassword": ("text", 40),
     "serverPasswordAdmin": ("text", 40),
+    "serverSteamAccount": ("token", None),
     "serverAutoSaveInterval": ("int", (15, 120)),
     "difficulty": ("choice", DIFFICULTIES),
     "serverContact": ("text", 80),
@@ -145,7 +149,7 @@ RULES = {
 }
 # Chosen by the deployment, not the panel.
 MANAGED = ("serverIP", "serverSteamPort", "serverGamePort", "serverQueryPort", "saveFolderPath",
-           "initType", "slot", "serverSteamAccount", "showLogs")
+           "initType", "slot", "showLogs")
 
 
 # ------------------------------------------------------------------------------------------------
@@ -220,6 +224,14 @@ def coerce(rule, value):
         if not isinstance(value, (str, int, float)) or isinstance(value, bool):
             return None, "must be text"
         return clean_text(value, arg), None
+    if kind == "token":
+        # A Steam game server login token (GSLT): 32 hex characters, or empty for an anonymous server.
+        text = str(value).strip() if isinstance(value, (str, int)) and not isinstance(value, bool) else None
+        if text is None:
+            return None, "must be text"
+        if text and not GSLT_RE.match(text):
+            return None, "must be the 32 characters of a Steam game server token (or empty)"
+        return text, None
     if kind == "bool":
         if isinstance(value, bool):
             return value, None
@@ -341,12 +353,13 @@ ENV_KEYS = {
     "FOREST_SERVER_NAME": "serverName",
     "FOREST_PASSWORD": "serverPassword",
     "FOREST_ADMIN_PASSWORD": "serverPasswordAdmin",
+    "FOREST_STEAM_ACCOUNT": "serverSteamAccount",
     "FOREST_MAX_PLAYERS": "serverPlayers",
     "FOREST_DIFFICULTY": "difficulty",
     "FOREST_AUTOSAVE_MINUTES": "serverAutoSaveInterval",
     "FOREST_SAVE_SLOT": "slot",
 }
-SECRET_KEYS = ("serverPassword", "serverPasswordAdmin")
+SECRET_KEYS = ("serverPassword", "serverPasswordAdmin", "serverSteamAccount")
 
 
 def merge_settings(config, change):
@@ -448,6 +461,12 @@ def apply_config(notes):
     save_config(config)
     notes.append(f"slot {config['slot']}, {config['difficulty']}, up to {config['serverPlayers']} players, "
                  f"ports steam {config['serverSteamPort']} game {config['serverGamePort']} query {config['serverQueryPort']}")
+    if config.get("serverSteamAccount"):
+        notes.append("Steam login: game server token set (the server keeps the same identity between starts)")
+    else:
+        notes.append("Steam login: anonymous. The server gets a new identity at every start, and the game ties each "
+                     "player's character (kept on their own PC) to it, so characters start over after a restart. "
+                     "Set FOREST_STEAM_ACCOUNT to a game server token made for Steam app 242760 to prevent that")
     return config
 
 

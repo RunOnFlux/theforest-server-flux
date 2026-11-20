@@ -269,6 +269,30 @@ check "and the admin password" "" "$(cfg serverPasswordAdmin | tr -d ' ')"
 check "without printing it" "0" "$(grep -c -E 'pw1|adm1' "${tmp}/apply.out")"
 forest "${P[@]}" FOREST_PASSWORD= apply >/dev/null
 check "a blank that was never set changes nothing" "" "$(cfg serverPassword | tr -d ' ')"
+# The Steam game server token (1.0.2): characters live on each player's PC, tied to the server's identity.
+TOKEN=0123456789ABCDEF0123456789ABCDEF
+check "the config has no token by default" "" "$(cfg serverSteamAccount | tr -d ' ')"
+forest "${P[@]}" apply >"${tmp}/apply.out"
+check "an anonymous start says so in the notes" "1" "$(grep -c 'Steam login: anonymous' "${tmp}/apply.out")"
+forest "${P[@]}" FOREST_STEAM_ACCOUNT="${TOKEN}" apply >"${tmp}/apply.out"
+check "the token is set from the env" "${TOKEN}" "$(cfg serverSteamAccount | tr -d ' ')"
+check "the log never prints the token" "0" "$(grep -c "${TOKEN}" "${tmp}/apply.out")"
+check "and says a token is set" "1" "$(grep -c 'Steam login: game server token set' "${tmp}/apply.out")"
+forest "${P[@]}" FOREST_STEAM_ACCOUNT="not-a-token" apply >"${tmp}/apply.out"
+check "a malformed env token is refused and the old one kept" "${TOKEN}" "$(cfg serverSteamAccount | tr -d ' ')"
+check "with a warning" "1" "$(grep -c 'WARN FOREST_STEAM_ACCOUNT' "${tmp}/apply.out")"
+check "the panel refuses a malformed token" "1" "$(status forest set-settings '{"serverSteamAccount": "abc"}')"
+check "the panel refuses a token with a space inside" "1" "$(status forest set-settings '{"serverSteamAccount": "0123456789ABCDEF 123456789ABCDEF"}')"
+check "the panel takes a token" "0" "$(status forest "${P[@]}" FOREST_STEAM_ACCOUNT="${TOKEN}" set-settings '{"serverSteamAccount": "FEDCBA9876543210FEDCBA9876543210"}')"
+check "and writes it" "FEDCBA9876543210FEDCBA9876543210" "$(cfg serverSteamAccount | tr -d ' ')"
+forest "${P[@]}" FOREST_STEAM_ACCOUNT="${TOKEN}" apply >/dev/null
+check "a token saved in the panel survives the same env" "FEDCBA9876543210FEDCBA9876543210" "$(cfg serverSteamAccount | tr -d ' ')"
+check "an empty token from the panel makes the server anonymous" "" "$(forest "${P[@]}" FOREST_STEAM_ACCOUNT="${TOKEN}" set-settings '{"serverSteamAccount": ""}' >/dev/null; cfg serverSteamAccount | tr -d ' ')"
+forest "${P[@]}" FOREST_STEAM_ACCOUNT="${TOKEN}" apply >/dev/null
+forest "${P[@]}" FOREST_STEAM_ACCOUNT= apply >/dev/null
+check "emptying the env removes a deployment's token" "" "$(cfg serverSteamAccount | tr -d ' ')"
+check "settings lists the token rule" "token" "$(forest settings | jget rules.serverSteamAccount.type)"
+
 forest "${P[@]}" FOREST_SERVER_NAME="Deploy Name" apply >/dev/null
 forest set-settings '{"serverName": "Panel Name"}' >/dev/null
 forest "${P[@]}" FOREST_SERVER_NAME="Deploy Name" apply >/dev/null

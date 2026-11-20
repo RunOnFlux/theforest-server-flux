@@ -52,6 +52,10 @@ A real-game test needs the install volume (1.8 GB): see README "Measured".
 - **Bans** are in the game's own PlayerPrefs file (key `BanList`), not editable offline: not a panel feature.
   In-game admin commands (`/kick <steamId>`, `/ban <steamId>`, `/save <slot>`, `/restart`, `/shutdown`) are typed in
   chat by a player who joined with the admin password (the join token carries it, `AdminAuthed`).
+- **Characters live on the players' PCs, tied to the server's Steam identity.** An anonymous server (no `serverSteamAccount`)
+  gets a new SteamID at every start (seen in the log: `Game server SteamID:`), so every character starts over after a restart while the
+  world (server side) stays. `FOREST_STEAM_ACCOUNT` / the panel field sets the token (made for app 242760). Source: community guides, not
+  proven with a client here.
 - **The log is noisy**: a `RenderTexture.Create failed` every second or so, a NullReferenceException stack from the
   UI each second. `flux_noise` keeps them out of the container output; the game log keeps everything.
 - **Empty env = unset.** Flux stops a container with Docker's default 10 seconds.
