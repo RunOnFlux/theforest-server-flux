@@ -1153,7 +1153,13 @@ def cmd_do_restore(_args):
             os.makedirs(os.path.dirname(MODE_DIR), exist_ok=True)
             shutil.move(os.path.join(restored, "Multiplayer"), MODE_DIR)
         if os.path.isfile(os.path.join(restored, "config.cfg")):
+            # The Steam token is the server's identity, not a setting of the world: whatever the backup
+            # holds (often none, from before the token), the server keeps the one it has now.
+            token = load_config()[0].get("serverSteamAccount", "")
             shutil.copyfile(os.path.join(restored, "config.cfg"), CONFIG_FILE)
+            config, _ = load_config()
+            config["serverSteamAccount"] = token
+            save_config(config)
             reassert_env_passwords()
         print(f"# restored {name}")
     except (OSError, ValueError, tarfile.TarError) as e:

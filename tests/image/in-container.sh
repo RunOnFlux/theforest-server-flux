@@ -106,7 +106,8 @@ mkdir -p "${WINEPREFIX}/drive_c"
 
 data=/mnt/theforest/data
 export FLUX_RESTART_BACKOFF=1 FLUX_UPDATE_CHECK_MINUTES=0 FOREST_SERVER_NAME="Image Test" FOREST_MAX_PLAYERS=4 \
-  FOREST_STEAM_PORT=31000 FOREST_GAME_PORT=31001 FOREST_QUERY_PORT=31002 FLUX_RESTART_WAIT_MINUTES=1
+  FOREST_STEAM_PORT=31000 FOREST_GAME_PORT=31001 FOREST_QUERY_PORT=31002 FLUX_RESTART_WAIT_MINUTES=1 \
+  FOREST_STEAM_ACCOUNT=0123456789ABCDEF0123456789ABCDEF
 cfg() { sed -n "s/^$1 //p" "${data}/config.cfg"; }
 state() { python3 -c 'import json;print(json.load(open("'"${data}"'/flux/state.json"))["'"$1"'"])'; }
 /opt/flux/flux-entrypoint.sh >/tmp/entry.log 2>&1 &
@@ -115,6 +116,9 @@ check "the server comes up" "0" "$(status wait_for 'grep -q "\"running\"" ${data
 check "on the virtual display" "0" "$(status pgrep -x Xvfb)"
 check "the config has the name" "Image Test" "$(cfg serverName)"
 check "and the ports" "31002" "$(cfg serverQueryPort)"
+check "the Steam token reaches the config" "0123456789ABCDEF0123456789ABCDEF" "$(cfg serverSteamAccount)"
+check "and never the logs" "0" "$(cat /tmp/entry.log /mnt/theforest/server/flux-logs/flux.log 2>/dev/null | grep -c 0123456789ABCDEF0123456789ABCDEF)"
+check "the start-up says a token is set" "1" "$(grep -c "Steam login: game server token set" /tmp/entry.log)"
 check "and the saves on the data volume" "0" "$(status test -d ${data}/saves/Multiplayer)"
 check "shader and stack noise stays out of the container log" "0" "$(grep -c -E 'Shader Unsupported|NullReferenceException|UICamera|RenderTexture' /tmp/entry.log)"
 check "but the game's lines reach it" "1" "$(grep -c 'Dedicated server info' /tmp/entry.log)"

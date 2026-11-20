@@ -291,6 +291,17 @@ check "an empty token from the panel makes the server anonymous" "" "$(forest "$
 forest "${P[@]}" FOREST_STEAM_ACCOUNT="${TOKEN}" apply >/dev/null
 forest "${P[@]}" FOREST_STEAM_ACCOUNT= apply >/dev/null
 check "emptying the env removes a deployment's token" "" "$(cfg serverSteamAccount | tr -d ' ')"
+# A restore keeps the server's token, with the env variable absent altogether (an older spec has none).
+forest set-settings '{"serverSteamAccount": ""}' >/dev/null
+rm -rf "${data}/flux/backups"
+forest state running
+forest backup "before the token" force >/dev/null
+tname="$(forest backups | jget backups.0.name)"
+forest set-settings '{"serverSteamAccount": "0123456789ABCDEF0123456789ABCDEF"}' >/dev/null
+forest restore "${tname}" >/dev/null
+forest do-restore >/dev/null
+check "a restore of a backup from before the token keeps the token (no env at all)" "0123456789ABCDEF0123456789ABCDEF" "$(cfg serverSteamAccount | tr -d ' ')"
+forest set-settings '{"serverSteamAccount": ""}' >/dev/null
 check "settings lists the token rule" "token" "$(forest settings | jget rules.serverSteamAccount.type)"
 
 forest "${P[@]}" FOREST_SERVER_NAME="Deploy Name" apply >/dev/null
